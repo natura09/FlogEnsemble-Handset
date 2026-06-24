@@ -1,156 +1,139 @@
-#include "Instfunc.h"
-#include "config.h"
+// Melody.ino (Arduino用音源モジュール - 修正版)
 
-/*
- * InstClient: 音楽演奏ロジック（Melody/Organ/Trumpet）完全合体版 (修正版)
- */
+const float NOTE_C4 = 261.63; // ド
+const float NOTE_D4 = 293.66; // レ
+const float NOTE_E4 = 329.63; // ミ
+const float NOTE_F4 = 349.23; // ファ
+const float NOTE_G4 = 392.00; // ソ
+const float NOTE_A4 = 440.00; // ラ
+const float REST    = 0.0;    // 休符
 
-InstClass inst;
+const float melody[] = {
+  NOTE_C4, NOTE_D4, NOTE_E4, NOTE_F4, NOTE_E4, NOTE_D4, NOTE_C4, REST,
+  NOTE_E4, NOTE_F4, NOTE_G4, NOTE_A4, NOTE_G4, NOTE_F4, NOTE_E4, REST,
+  NOTE_C4, REST, NOTE_C4, REST, NOTE_C4, REST, NOTE_C4, REST,
+  NOTE_C4, NOTE_C4, NOTE_D4, NOTE_D4, NOTE_E4, NOTE_E4, NOTE_F4, NOTE_F4,
+  NOTE_E4, NOTE_D4, NOTE_C4, REST              
+};
+const int melodyLength = sizeof(melody) / sizeof(melody[0]);
 
-// Melody.ino 等にある外部関数・変数をこのファイルでも使うための宣言(extern)
-extern int bpm;
-extern boolean isPlaying;
-extern int currentIndex;
-extern unsigned long nextNoteTime;
-extern unsigned long noteStartMillis;
-extern unsigned long stopNoteTime; // ★外部変数の参照を正しく修正
+const int duration[] = {
+  4, 4, 4, 4, 4, 4, 4, 4,
+  4, 4, 4, 4, 4, 4, 4, 4,
+  4, 4, 4, 4, 4, 4, 4, 4,
+  8, 8, 8, 8, 8, 8, 8, 8,
+  4, 4, 4, 4
+};
+int bpm = 90; // 初期値は「普通(90)」
+int currentIndex = 0; 
+unsigned long nextNoteTime = 0; 
+unsigned long stopNoteTime = 0;
+unsigned long noteStartMillis = 0; // 現在の音符が鳴り始めた時刻を記録
+float currentNoteDurationMs = 0;   // 現在の音符の総長さ(ms)
+bool isPlaying = false;
+
 extern void initTrumpet();
 extern void initOrgan();
-extern void playNextNote();
-extern void trumpetUpdate();
-extern void organUpdate();
+extern void trumpetPlay(float freq);
 extern void trumpetStop();
+extern void trumpetUpdate();
+extern void organPlay(float freq);
 extern void organStop();
-extern void recalculateTempo();
+extern void organUpdate();
 extern float getTrumpetAmp();
 extern float getOrganAmp();
-extern const float melody[];
-extern const int melodyLength;
 
-// Processingへ状態を送るタイマー
-unsigned long lastSerialTime = 0;
-// 親機との時刻同期用
-unsigned long syncTime = 0; 
-// 内部状態管理
-boolean musicInitialized = false;
-
-void setup() {
-    inst.Starts(); // シリアル、Wi-Fi、UDPの初期化
-    
-    Serial.println("=========================================");
-    Serial.println("InstClient: Music & Sync Integrated Mode");
-    Serial.println("Waiting for Connection & START signal...");
-    Serial.println("=========================================");
+float lerp(float start, float end, float amt) {
+  return start + amt * (end - start);
 }
 
-void loop() {
-    // ----------------------------------------------------
-    // ステップ1: まずはTCP接続と親機への登録を行う
-    // ----------------------------------------------------
-    if (inst.ready < 1){
-        inst.connection();   
-        isPlaying = false;
-        musicInitialized = false;
-    } 
-    
-    // ----------------------------------------------------
-    // ステップ2: 接続完了(ready=1)。親機からのUDP演奏開始指示(START)を待つ
-    // ----------------------------------------------------
-    else if (inst.ready == 1) {
-        inst.recieveStart(); 
-        
-        // 親機からSTARTを受信して ready が 2 に変化した瞬間
-        if (inst.ready == 2) {
-            syncTime = millis();
-            Serial.println("▶▶ 親機よりSTART信号を受信！演奏を開始します。");
-            
-            // 音楽データの初期化
-            initTrumpet();
-            initOrgan();
-            currentIndex = 0;
-            isPlaying = true;
-            musicInitialized = true;
-            playNextNote(); // 最初の音を鳴らす
-        }
-        
-        // 待機中もProcessingへ「0」のデータを送り、BPM状態を伝える
-        if (millis() - lastSerialTime >= 10) {
-            lastSerialTime = millis();
-            Serial.print("0.0,0.0,0.0,");
-            Serial.println(bpm);
-        }
+// 演奏途中でBPMが変わった際、現在鳴っている音符の残りの長さを再計算する関数
+void recalculateTempo() {
+  if (!isPlaying || currentIndex == 0) return;
+  int idx = currentIndex - 1;
+  float newDurationMs = (60000.0 / bpm) * (4.0 / duration[idx]);
+  
+  unsigned long elapsed = millis() - noteStartMillis;
+  currentNoteDurationMs = newDurationMs;
+  nextNoteTime = noteStartMillis + (unsigned long)currentNoteDurationMs;
+  stopNoteTime = noteStartMillis + (unsigned long)(currentNoteDurationMs * 0.85f);
+}
+
+void playNextNote() {
+  if (currentIndex >= melodyLength) {
+    trumpetStop();
+    organStop();
+    isPlaying = false; 
+    return;
+  }
+  
+  float currentFreq = melody[currentIndex];
+  noteStartMillis = millis();
+  
+  currentNoteDurationMs = (60000.0 / bpm) * (4.0 / duration[currentIndex]);
+  nextNoteTime = noteStartMillis + (unsigned long)currentNoteDurationMs;
+  stopNoteTime = noteStartMillis + (unsigned long)(currentNoteDurationMs * 0.85f);
+  if (currentFreq > 0) {
+    trumpetPlay(currentFreq);
+    organStop();
+  } else {
+    trumpetStop();
+    organStop();
+  }
+  
+  currentIndex++;
+}
+
+// ==========================================
+// ★ 新しい通信コードと噛み合わせるための関数群
+// ==========================================
+
+// 外部から演奏を開始させる関数
+void startMelody() {
+  if (!isPlaying) {
+    currentIndex = 0;
+    isPlaying = true;
+    nextNoteTime = millis();
+    stopNoteTime = millis();
+  }
+}
+
+// 外部から受信した速度レベル(1〜3)に応じてBPMを変更する関数
+void changeBpmByLevel(int level) {
+  if (level == 1)      bpm = 70;  // 遅い
+  else if (level == 2) bpm = 90;  // 普通
+  else if (level == 3) bpm = 110; // 早い
+  recalculateTempo();
+}
+
+// メインのloopから毎サイクル呼び出され、音の更新とシリアル出力を担う関数
+void updateMelodyLoop() {
+  if (isPlaying) {
+    trumpetUpdate();
+    organUpdate();
+    if (millis() > stopNoteTime) {
+      trumpetStop();
+      organStop();
     }
     
-    // ----------------------------------------------------
-    // ステップ3: 演奏中(ready=2)。親機からのテンポ監視と演奏処理
-    // ----------------------------------------------------
-    else {
-        // ① 親機からのテンポ変更指示（LEVEL）をリアルタイムにチェック
-        int level = inst.recieveLevel();
-        if (level == 99) { // 時刻同期信号
-            syncTime = millis();
-            Serial.println(">>> SYNC Received. Local clock reset.");
-        } 
-        else if (level > 0) {
-            // 受信したレベルに応じてBPMを書き換え、音符の長さを再計算
-            int prevBpm = bpm;
-            if (level == 1) bpm = 70;  // 遅い
-            if (level == 2) bpm = 90;  // 普通
-            if (level == 3) bpm = 110; // 速い
-            
-            if (bpm != prevBpm) {
-                Serial.print("⏱ 親機指示によりBPM変更: "); 
-                Serial.print(prevBpm); Serial.print(" -> "); Serial.println(bpm);
-                recalculateTempo(); // Melody.inoの破綻なきテンポ再計算関数を呼び出す
-            }
-        }
-
-        // ② あなたが作った本来のMelody.inoの演奏・ADSR更新メイン処理
-        if (isPlaying) {
-            trumpetUpdate();
-            organUpdate();
-            
-            // 音符の切り替えタイミングの管理
-            if (millis() >= nextNoteTime) {
-                playNextNote();
-            } else if (millis() >= stopNoteTime) { // ★記述ミスを修正
-                // 音符の終了直前の消音処理
-                float currentFreq = melody[currentIndex - 1];
-                if (currentFreq != 0.0) {
-                    trumpetStop();
-                    organStop();
-                }
-            }
-            
-            // 曲が最後まで終わった時の判定
-            if (!isPlaying) {
-                Serial.println("END"); // Processingへ演奏終了(自動保存等)を通知
-                inst.ready = 1;        // 次の親機の演奏開始指示を待つ状態(ready=1)に戻る
-                musicInitialized = false;
-            }
-        }
-
-        // ③ Processingへ楽器の「リアルタイム状態データ」をシリアル高速送信（10msごと）
-        if (millis() - lastSerialTime >= 10) {
-            lastSerialTime = millis();
-            
-            if (isPlaying && currentIndex > 0) {
-                float currentFreq = melody[currentIndex - 1];
-                if (millis() >= stopNoteTime) { // ★記述ミスを修正
-                    currentFreq = 0.0; // 消音時間帯は周波数を0にして送る
-                }
-                Serial.print(currentFreq, 2);
-                Serial.print(",");
-                Serial.print(getTrumpetAmp(), 4);
-                Serial.print(",");
-                Serial.print(getOrganAmp(), 4);
-                Serial.print(",");
-                Serial.println(bpm);
-            } else {
-                // 演奏が完全に終わった時
-                Serial.print("0.0,0.0,0.0,");
-                Serial.println(bpm);
-            }
-        }
+    if (millis() > nextNoteTime) {
+      playNextNote();
     }
+
+    if (!isPlaying) {
+      Serial.println("END,0.0,0.0,0");
+    } else {
+      Serial.print(currentIndex > 0 ? melody[currentIndex - 1] : 0.0);
+      Serial.print(",");
+      Serial.print(getTrumpetAmp(), 4);
+      Serial.print(",");
+      Serial.print(getOrganAmp(), 4);
+      Serial.print(",");
+      Serial.println(bpm);
+    }
+  } else {
+    // 待機中もProcessingへのシリアル送信を維持
+    Serial.print("0.0,0.0,0.0,");
+    Serial.println(bpm);
+  }
 }
