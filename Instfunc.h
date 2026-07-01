@@ -3,6 +3,7 @@
 
 #include <Arduino.h>
 #include <WiFiS3.h>
+#include <WiFiUdp.h>
 #include "config.h"
 
 class InstClass{
@@ -10,11 +11,13 @@ class InstClass{
         WiFiClient client;
         IPAddress serverIP;
         WiFiUDP udp;
+        unsigned long lastHelloMs;   // UDP HELLO 再送のタイミング管理
 
     public:
         InstClass();
         bool isRegistered;
         int ready;
+        int currentLevel;
         void Starts();
         void WiFiStart();
         void startUDP();
@@ -23,10 +26,13 @@ class InstClass{
         void sendIdentification(const char* name);
         String receiveTCP(WiFiClient &c);
         String receiveUDP(WiFiUDP &u);
+        String recieveCommand();
+        bool recieveCommandFast(char *buffer, size_t bufferSize); // ← これを追加
 
         // 新機能
         void recieveStart();
         int recieveLevel();
+        int recieveInstruction();
 
 };
 #endif

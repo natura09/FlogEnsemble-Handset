@@ -90,12 +90,13 @@ void playNextNote() {
 
 // 外部から演奏を開始させる関数
 void startMelody() {
-  if (!isPlaying) {
+    trumpetStop();
+    organStop();
     currentIndex = 0;
     isPlaying = true;
+    noteStartMillis = millis();
     nextNoteTime = millis();
     stopNoteTime = millis();
-  }
 }
 
 // 外部から受信した速度レベル(1〜3)に応じてBPMを変更する関数
@@ -108,6 +109,8 @@ void changeBpmByLevel(int level) {
 
 // メインのloopから毎サイクル呼び出され、音の更新とシリアル出力を担う関数
 void updateMelodyLoop() {
+  static unsigned long lastSerialMs = 0;  // ← 追加
+  
   if (isPlaying) {
     trumpetUpdate();
     organUpdate();
@@ -115,25 +118,35 @@ void updateMelodyLoop() {
       trumpetStop();
       organStop();
     }
-    
     if (millis() > nextNoteTime) {
       playNextNote();
     }
 
-    if (!isPlaying) {
-      Serial.println("END,0.0,0.0,0");
-    } else {
-      Serial.print(currentIndex > 0 ? melody[currentIndex - 1] : 0.0);
-      Serial.print(",");
-      Serial.print(getTrumpetAmp(), 4);
-      Serial.print(",");
-      Serial.print(getOrganAmp(), 4);
-      Serial.print(",");
-      Serial.println(bpm);
+    // ★シリアル送信は20ms(=50Hz)に1回だけ
+    if (millis() - lastSerialMs >= 20) {
+      lastSerialMs = millis();
+      if (!isPlaying) {
+        Serial.println("END,0.0,0.0,0");
+      } else {
+        Serial.print(currentIndex > 0 ? melody[currentIndex - 1] : 0.0);
+        Serial.print(",");
+        Serial.print(getTrumpetAmp(), 4);
+        Serial.print(",");
+        Serial.print(getOrganAmp(), 4);
+        Serial.print(",");
+        Serial.println(bpm);
+      }
     }
   } else {
-    // 待機中もProcessingへのシリアル送信を維持
-    Serial.print("0.0,0.0,0.0,");
-    Serial.println(bpm);
+    // 待機中も20msに1回だけ送信
+    if (millis() - lastSerialMs >= 20) {
+      lastSerialMs = millis();
+      Serial.print("0.0,0.0,0.0,");
+      Serial.println(bpm);
+    }
   }
+}
+
+void stopMelody() {
+    isPlaying = false;
 }

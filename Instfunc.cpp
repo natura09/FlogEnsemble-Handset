@@ -1,6 +1,7 @@
 #include "Instfunc.h"
 
-InstClass::InstClass() : isRegistered(false),ready(0) {
+InstClass::InstClass()
+    : lastHelloMs(0), isRegistered(false), ready(0), currentLevel(DEFAULT_LEVEL) {
     serverIP.fromString(SERVER_IP);
 }
 
@@ -46,34 +47,41 @@ void InstClass::sendIdentification(const char* name) {
     Serial.println(name);
 }
 
+// 親機(SyncMain / Codes)へ【UDPで自己登録】する。
+//   ・"HELLO|myname" を UDP で親機へ送る(未登録のうちは短い間隔、登録後はゆっくり再送)。
+//   ・親機は "WELCOME"(登録受理)を返し、全子機がそろうと "READY" を返す。
+//   ・READY を受信したら ready=1(演奏開始待ち)へ進む。
+//   ※ Codes は登録をTCPからUDPへ変更したため、こちらもUDP登録に合わせている。
 void InstClass::connection(){
-    if (!client.connected()) {
-        ready = 0;
-        isRegistered = false;
-        if (connectToServer()) {
-            // 親機に名乗る
-            sendIdentification(myname);
-        } else {
-            Serial.println("Connection failed. Retrying...");
-            delay(5000);
-            return;
+    if (ready >= 1) {
+        return;
+    }
+
+    unsigned long now = millis();
+    unsigned long retryDelay = this->isRegistered ?
+        REGISTERED_HELLO_RETRY_DELAY_MS : CONNECTION_RETRY_DELAY_MS;
+    if (now - this->lastHelloMs >= retryDelay) {
+        udp.beginPacket(serverIP, UDP_PORT);
+        udp.print("HELLO|");
+        udp.print(myname);
+        udp.endPacket();
+        this->lastHelloMs = now;
+        if (!this->isRegistered) {
+            Serial.print("UDP HELLO送信: ");
+            Serial.println(myname);
         }
     }
-    if (!isRegistered){
-        ready = 0;
-        String resp = receiveTCP(client);
-        if (resp == "WELCOME") {
+
+    String resp = receiveUDP(udp);
+    if (resp == "WELCOME") {
+        if (!isRegistered) {
             isRegistered = true;
-            ready = 1;
             Serial.println("Server registered this device (WELCOME).");
         }
-    }
-    else if (ready == 1){
-        String resp = receiveTCP(client);
-        if (resp == "START_READY") {
-            ready = 2;
-            Serial.println("全員の準備が整いました (START_READY受信)");
-        }
+    } else if (resp == "READY") {
+        isRegistered = true;
+        ready = 1;
+        Serial.println("全員の準備が整いました (READY受信)");
     }
 }
 
@@ -99,12 +107,19 @@ String InstClass::receiveTCP(WiFiClient &c) {
 String InstClass::receiveUDP(WiFiUDP &u) {
     int packetSize = u.parsePacket();
     if (packetSize) {
-        char buf[255];
+        char buf[256];
+        buf[0] = 0;
         int len = u.read(buf, 255);
         if (len > 0) buf[len] = 0;
-        return String(buf);
+        String msg(buf);
+        msg.trim();
+        return msg;
     }
     return "";
+}
+
+String InstClass::recieveCommand() {
+    return this->receiveUDP(this->udp);
 }
 
 // 新機能の実装
@@ -126,4 +141,34 @@ int InstClass::recieveLevel() {
         return level;
     }
     return 0; // 届いていない場合は0
+}
+
+int InstClass::recieveInstruction() {
+    String msg = this->receiveUDP(this->udp);
+    if (msg.length() == 0) {
+        return 0;
+    }
+
+    if (msg.startsWith("LEVEL:")) {
+        this->currentLevel = msg.substring(6).toInt();
+        Serial.print("[UDP] 速度レベル受信: ");
+        Serial.println(this->currentLevel);
+        return this->currentLevel;
+    }
+
+    return 0;
+}
+
+// ↓ファイルの一番最後に追加
+bool InstClass::recieveCommandFast(char *buffer, size_t bufferSize) {
+    int packetSize = this->udp.parsePacket();
+    if (!packetSize || bufferSize == 0) return false;
+    int len = this->udp.read(buffer, bufferSize - 1);
+    if (len <= 0) { buffer[0] = 0; return false; }
+    buffer[len] = 0;
+    while (len > 0 &&
+        (buffer[len-1] == '\r' || buffer[len-1] == '\n' || buffer[len-1] == ' ')) {
+        buffer[--len] = 0;
+    }
+    return len > 0;
 }
