@@ -18,7 +18,7 @@
 #define DEFAULT_LEVEL 2
 
 //子機の情報
-#define myname "inst2"
+#define myname "inst3"
 
 #define REGISTERED_HELLO_RETRY_DELAY_MS 2000
 

@@ -61,10 +61,7 @@ void recalculateTempo() {
 
 void playNextNote() {
   if (currentIndex >= melodyLength) {
-    trumpetStop();
-    organStop();
-    isPlaying = false; 
-    return;
+    currentIndex = 0; // 最後まで来たら先頭に戻ってループ再生
   }
   
   float currentFreq = melody[currentIndex];
@@ -74,8 +71,8 @@ void playNextNote() {
   nextNoteTime = noteStartMillis + (unsigned long)currentNoteDurationMs;
   stopNoteTime = noteStartMillis + (unsigned long)(currentNoteDurationMs * 0.85f);
   if (currentFreq > 0) {
-    trumpetPlay(currentFreq);
-    organStop();
+    organPlay(currentFreq);
+    trumpetStop();
   } else {
     trumpetStop();
     organStop();
@@ -159,4 +156,7 @@ void updateMelodyLoop() {
 
 void stopMelody() {
     isPlaying = false;
+    trumpetStop();
+    organStop();
+    Serial.println("END,0.0,0.0,0"); // Processing側を待機状態に戻す
 }

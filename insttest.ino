@@ -82,7 +82,7 @@ void handleCommand(char *message) {
         inst.ready = 1;
         inst.currentLevel = DEFAULT_LEVEL;
         Serial.println("STOP");            // ガイド指定のログ形式
-        // 必要なら演奏停止処理をここに追加
+        stopMelody();                      // ループ再生を停止
         return;
     }
 
