@@ -18,8 +18,9 @@ extern void initTrumpet();
 extern void initOrgan();
 extern void startMelody();
 extern void changeBpmByLevel(int level);
+extern void setBpmDirect(int bpmValue); // ★ BPM直接指定
 extern void updateMelodyLoop();
-extern void stopMelody(); // ← 追加
+extern void stopMelody();
 
 bool parseCommandWithSeq(char *message, char *&command, unsigned int &seq) {
     char *sep = strrchr(message, '|');
@@ -89,17 +90,18 @@ void handleCommand(char *message) {
     if (strncmp(message, "LEVEL:", 6) == 0 && message[6] != 0) {
         inst.currentLevel = atoi(message + 6);
         Serial.print("LEVEL:");
-        Serial.println(inst.currentLevel);  // ガイド指定のログ形式
+        Serial.println(inst.currentLevel);
         changeBpmByLevel(inst.currentLevel);
         return;
     }
 
-    if (strcmp(message, "STOP") == 0) {
-    inst.ready = 1;
-    inst.currentLevel = DEFAULT_LEVEL;
-    Serial.println("STOP");
-    stopMelody(); // ← これで isPlaying = false になる
-    return;
+    // ★ BPM:xxx（BPM値を直接指定）
+    if (strncmp(message, "BPM:", 4) == 0 && message[4] != 0) {
+        int bpmVal = atoi(message + 4);
+        Serial.print("BPM:");
+        Serial.println(bpmVal);
+        setBpmDirect(bpmVal);
+        return;
     }
 }
 
@@ -122,10 +124,29 @@ void loop() {
         Serial.print("[DEBUG] UDP受信: ");
         Serial.println(message);
         handleCommand(message);
-    }
+    }    
 
     // ★音源のエンベロープ状態更新とProcessingへのシリアル送信を毎ループ実行
     updateMelodyLoop();
+
+    if (Serial.available()) {
+        char c = Serial.read();
+        if (c == 'S') {
+            startMelody();
+            inst.ready = 2;
+        } else if (c == '1') {
+            changeBpmByLevel(1);
+        } else if (c == '2') {
+            changeBpmByLevel(2);
+        } else if (c == '3') {
+            changeBpmByLevel(3);
+        } else if (c == 'b' || c == 'B') {
+            // シリアルから "b120" のようにBPMを直接指定する場合
+            String bpmStr = Serial.readStringUntil('\n');
+            int bpmVal = bpmStr.toInt();
+            if (bpmVal > 0) setBpmDirect(bpmVal);
+        }
+    }
     
-    delay(10); // 元のMelody.inoのループ間隔・ウェイトを維持
+    //delay(10); // 元のMelody.inoのループ間隔・ウェイトを維持
 }

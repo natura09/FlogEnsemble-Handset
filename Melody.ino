@@ -107,6 +107,16 @@ void changeBpmByLevel(int level) {
   recalculateTempo();
 }
 
+// ★ 受信したBPM値をそのまま適用する関数
+void setBpmDirect(int bpmValue) {
+  if (bpmValue > 0) {
+    bpm = bpmValue;
+    recalculateTempo();
+    Serial.print("[BPM] 直接設定: ");
+    Serial.println(bpm);
+  }
+}
+
 // メインのloopから毎サイクル呼び出され、音の更新とシリアル出力を担う関数
 void updateMelodyLoop() {
   static unsigned long lastSerialMs = 0;  // ← 追加
