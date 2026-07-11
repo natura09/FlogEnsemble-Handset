@@ -25,7 +25,7 @@
 #define START_DEDUP_MS 2000
 
 // ================= この楽器の設定 =================
-// バイオリン（Processing: violin.pde と接続、LEDマトリクスのカエル付き）
-#define MYNAME "inst1"
+// トランペット（Processing: trumpet.pde と接続。giro/violinと同じ単独構成）
+#define MYNAME "inst2"
 
 #endif

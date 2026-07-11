@@ -1,16 +1,16 @@
-// --- 楽器: オルガン (organ v3 / giro・violin・trumpetと同じ構成に書き直し) ---
-// ボード: Arduino UNO R4 WiFi → Processing(organ.pde)へシリアル出力
+// --- 楽器: トランペット (trumpet v3 / giro・violinと同じ構成に書き直し) ---
+// ボード: Arduino UNO R4 WiFi → Processing(trumpet.pde)へシリアル出力
 //
 // 役割:
 //   ・親機からUDPで START|BPM:n / STOP / BPM:n を受信して演奏する
 //   ・音符ごとに "周波数(Hz),発音時間(ms)" をシリアル送信し、
-//     organ.pde が音色生成・再生する（休符は送らない）
+//     trumpet.pde が音色生成・再生する（休符は送らない）
 //   ・オンボードLEDマトリクスの「ドットのカエル」を演奏と同時に動かす
 //
-// ★これまでの organ.ino は trumpet.ino(旧) と組んで FlogEnsemble.pde に
+// ★これまでの trumpet.ino は organ.ino と組んで FlogEnsemble.pde に
 //   CSV(周波数,トランペット振幅,オルガン振幅,BPM)を50Hzで送る構成だったが、
-//   giro.ino / violin.ino / trumpet.ino(新) と同じ「単独のino + 単独のpde」
-//   構成に書き直した。Voices.h(OrganVoice/TrumpetVoice)はこの構成では使わない。
+//   giro.ino / violin.ino と同じ「単独のino + 単独のpde」構成に書き直した。
+//   Voices.h(TrumpetVoice)はこの構成では使わない。
 
 #include "config.h"
 #include "InstClient.h"
@@ -72,7 +72,7 @@ void setup() {
 
   inst.begin();
   frog.begin();
-  Serial.println("organ (inst3) v3 ready");
+  Serial.println("trumpet (inst2) v3 ready");
 }
 
 void loop() {
